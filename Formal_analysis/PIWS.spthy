@@ -1,0 +1,171 @@
+/*
+ *  Author: 
+ *  Model Name: test.spthy
+ *  Status: DEVELOPMENTAL
+ *
+ *  Comments:
+ */
+
+theory PIWS
+begin
+
+// builtins: diffie-hellman
+functions: CKKS_enc/2,CKKS_dec/2,CKKS_mul/2,mul/2,pk/1,RO/2,verif/1,true/0
+equations: CKKS_dec(CKKS_enc(a,pk(k)),k)=a,
+			verif( RO(RO(a,b),c) , RO(RO(a,c),b) )=true
+			
+
+/* Channel rules */
+
+rule ChanOut_A[color=#C0C0C0]:
+    [ Out_A($A,x) ]
+    --[ ChanOut_A($A,x) ]->
+    [ !Auth($A,x), Out(<$A,x>) ]
+
+rule ChanIn_A[color=#C0C0C0]:
+    [ !Auth($A,x) ]
+    --[ ChanIn_A($A,x) ]->
+    [ In_A($A,x) ]
+
+rule transform[color=#AFEEEE]:
+  let
+    x=CKKS_mul(CKKS_enc(m,k),CKKS_enc(n,k))
+    y=CKKS_enc(mul(m,n),k)
+  in
+    [ !Auth($A,x) ]
+  --[ Transform() ]->
+    [ !Auth($A,y),Out(<$A,y>) ]
+
+
+// Gen key
+
+rule Register_CKKS_pk:
+	[ Fr(~ltkA) ]
+	-->
+	[ !Ltk_CKKS($A, ~ltkA), 
+	!Pk_CKKS($A, pk(~ltkA)), 
+	Out(pk(~ltkA)) ]
+
+// rule Reveal_ltk:
+// 	[ !Ltk(A, ltk) ]
+// 	--[ LtkReveal(A) ]->
+// 	[ Out(ltk) ]
+
+/* Protocol */
+rule intersection:
+    [ Fr(~ID),Fr(~weight),Fr(~score),Fr(~k1),Fr(~k2) ]
+  --[ Only_once('setup') ]->
+    [ !Intersection(~ID),!ForA(~weight,~k1),!ForB(~score,~k2) ]
+
+rule Reveal_TemporalKeyA:
+    [ !ForA(t1,t2),!Intersection(ID) ]
+  --[ Reveal('A') ]->
+    [ Out(<t1,t2,ID>) ]
+
+rule Reveal_TemporalKeyB:
+    [ !ForB(t1,t2),!Intersection(ID) ]
+  --[ Reveal('B') ]->
+    [ Out(<t1,t2,ID>) ]
+
+rule Reveal_CKKSKey:
+    [ !Ltk_CKKS($A, ltkA) ]
+  --[ Reveal('CKKS') ]->
+    [ Out(ltkA) ]
+rule A_1:
+  let
+    C1=RO(ID,k1)
+  in
+    [ !Intersection(ID),!ForA(weight,k1) ]
+  --[  ]->
+    [ Out_A('1',C1),State_A_1(ID,k1,weight) ]
+
+rule B_1:
+  let
+    M1=RO(C1,k2)
+    M2=RO(ID,k2)
+    M3=CKKS_enc(score,pk(CKKS_key))
+    C2=<M1,M2,M3>
+  in
+    [ !Intersection(ID),!ForB(score,k2),!Ltk_CKKS('B',CKKS_key),In_A('1',C1) ]
+  --[  ]->
+    [ Out_A('2',C2),State_B_1(ID,k2,CKKS_key,score) ]
+
+rule A_2:
+  let
+ 	C2=<M1,M2,M3>
+    seq=verif(M1,RO(M2,k1))
+    compute=CKKS_enc(weight,CKKS_pubkey)
+    C3=CKKS_mul(M3,compute)
+  in
+    [ State_A_1(ID,k1,weight), !Pk_CKKS('B',CKKS_pubkey ), In_A('2',C2)]
+  --[ Eq(seq,true) ]->
+    [ Out_A('3',C3)]
+
+rule B_2:
+  let
+    C3=CKKS_enc(result,pk(CKKS_key))
+  in
+    [ State_B_1(ID,k2,CKKS_key,score),In_A('3',C3) ]
+  --[ Finish(result) ]->
+    [  ]
+
+restriction unique_init:
+"
+    All a #i #j. Only_once(a) @i & Only_once(a) @j ==> #i =#j
+"
+restriction eq:
+"
+    All x y #i. Eq(x,y) @ i ==> x = y
+"
+
+lemma reachable:
+exists-trace
+"
+    Ex n #i.
+    Finish(n) @i
+"
+
+
+lemma compute_secrecy:
+" /* It cannot be that a */
+not(
+Ex n #i #j.
+/* client has set up a session key 'k' with a server'S' */
+Finish(n) @ #i
+/* and the adversary knows 'k' */
+& K(n) @ #j
+/* without having performed a long-term key reveal on 'S'. */
+& not(Ex #r. Reveal('A') @ r)
+& not(Ex #r. Reveal('B') @ r)
+& not(Ex #r. Reveal('CKKS') @ r)
+)
+"
+
+lemma compute_secrecy_with_A_TemporalKey_Reveal:
+" /* It cannot be that a */
+not(
+Ex n #i #j.
+/* client has set up a session key 'k' with a server'S' */
+Finish(n) @ #i
+/* and the adversary knows 'k' */
+& K(n) @ #j
+/* without having performed a long-term key reveal on 'S'. */
+& not(Ex #r. Reveal('B') @ r)
+& not(Ex #r. Reveal('CKKS') @ r)
+)
+"
+
+lemma compute_secrecy_with_B_TemporalKey_Reveal:
+" /* It cannot be that a */
+not(
+Ex n #i #j.
+/* client has set up a session key 'k' with a server'S' */
+Finish(n) @ #i
+/* and the adversary knows 'k' */
+& K(n) @ #j
+/* without having performed a long-term key reveal on 'S'. */
+& not(Ex #r. Reveal('A') @ r)
+& not(Ex #r. Reveal('CKKS') @ r)
+)
+"
+end

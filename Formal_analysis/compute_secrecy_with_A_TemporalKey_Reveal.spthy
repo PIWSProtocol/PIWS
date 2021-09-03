@@ -1,0 +1,229 @@
+theory PIWS begin
+
+// Function signature and definition of the equational theory E
+
+functions: CKKS_dec/2, CKKS_enc/2, CKKS_mul/2, RO/2, fst/1, mul/2,
+           pair/2, pk/1, snd/1, true/0, verif/1
+equations:
+    CKKS_dec(CKKS_enc(a, pk(k)), k) = a,
+    fst(<x.1, x.2>) = x.1,
+    snd(<x.1, x.2>) = x.2,
+    verif(<RO(RO(a, b), c), RO(RO(a, c), b)>) = true
+
+
+
+rule (modulo E) ChanOut_A[color=#c0c0c0]:
+   [ Out_A( $A, x ) ]
+  --[ ChanOut_A( $A, x ) ]->
+   [ !Auth( $A, x ), Out( <$A, x> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ChanIn_A[color=#c0c0c0]:
+   [ !Auth( $A, x ) ] --[ ChanIn_A( $A, x ) ]-> [ In_A( $A, x ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) transform[color=#afeeee]:
+   [ !Auth( $A, CKKS_mul(CKKS_enc(m, k), CKKS_enc(n, k)) ) ]
+  --[ Transform( ) ]->
+   [
+   !Auth( $A, CKKS_enc(mul(m, n), k) ), Out( <$A, CKKS_enc(mul(m, n), k)> )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Register_CKKS_pk:
+   [ Fr( ~ltkA ) ]
+  -->
+   [ !Ltk_CKKS( $A, ~ltkA ), !Pk_CKKS( $A, pk(~ltkA) ), Out( pk(~ltkA) ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) intersection:
+   [ Fr( ~ID ), Fr( ~weight ), Fr( ~score ), Fr( ~k1 ), Fr( ~k2 ) ]
+  --[ Only_once( 'setup' ) ]->
+   [ !Intersection( ~ID ), !ForA( ~weight, ~k1 ), !ForB( ~score, ~k2 ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Reveal_TemporalKeyA:
+   [ !ForA( t1, t2 ), !Intersection( ID ) ]
+  --[ Reveal( 'A' ) ]->
+   [ Out( <t1, t2, ID> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Reveal_TemporalKeyB:
+   [ !ForB( t1, t2 ), !Intersection( ID ) ]
+  --[ Reveal( 'B' ) ]->
+   [ Out( <t1, t2, ID> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Reveal_CKKSKey:
+   [ !Ltk_CKKS( $A, ltkA ) ] --[ Reveal( 'CKKS' ) ]-> [ Out( ltkA ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) A_1:
+   [ !Intersection( ID ), !ForA( weight, k1 ) ]
+  -->
+   [ Out_A( '1', RO(ID, k1) ), State_A_1( ID, k1, weight ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) B_1:
+   [
+   !Intersection( ID ), !ForB( score, k2 ), !Ltk_CKKS( 'B', CKKS_key ),
+   In_A( '1', C1 )
+   ]
+  -->
+   [
+   Out_A( '2', <RO(C1, k2), RO(ID, k2), CKKS_enc(score, pk(CKKS_key))> ),
+   State_B_1( ID, k2, CKKS_key, score )
+   ]
+
+  // loop breaker: [3]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) A_2:
+   [
+   State_A_1( ID, k1, weight ), !Pk_CKKS( 'B', CKKS_pubkey ),
+   In_A( '2', <M1, M2, M3> )
+   ]
+  --[ Eq( verif(<M1, RO(M2, k1)>), true ) ]->
+   [ Out_A( '3', CKKS_mul(M3, CKKS_enc(weight, CKKS_pubkey)) ) ]
+
+  // loop breaker: [2]
+  /*
+  rule (modulo AC) A_2:
+     [
+     State_A_1( ID, k1, weight ), !Pk_CKKS( 'B', CKKS_pubkey ),
+     In_A( '2', <M1, M2, M3> )
+     ]
+    --[ Eq( z, true ) ]->
+     [ Out_A( '3', CKKS_mul(M3, CKKS_enc(weight, CKKS_pubkey)) ) ]
+    variants (modulo AC)
+    1. M1    = M1.16
+       M2    = M2.17
+       k1    = k1.19
+       z     = verif(<M1.16, RO(M2.17, k1.19)>)
+    
+    2. M1    = RO(RO(x.45, k1.27), x.47)
+       M2    = RO(x.45, x.47)
+       k1    = k1.27
+       z     = true
+    // loop breaker: [2]
+  */
+
+rule (modulo E) B_2:
+   [
+   State_B_1( ID, k2, CKKS_key, score ),
+   In_A( '3', CKKS_enc(result, pk(CKKS_key)) )
+   ]
+  --[ Finish( result ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction unique_init:
+  "∀ a #i #j. ((Only_once( a ) @ #i) ∧ (Only_once( a ) @ #j)) ⇒ (#i = #j)"
+  // safety formula
+
+restriction eq:
+  "∀ x y #i. (Eq( x, y ) @ #i) ⇒ (x = y)"
+  // safety formula
+
+lemma reachable:
+  exists-trace "∃ n #i. Finish( n ) @ #i"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ n #i. (Finish( n ) @ #i)"
+*/
+by sorry
+
+lemma compute_secrecy:
+  all-traces
+  "¬(∃ n #i #j.
+      ((((Finish( n ) @ #i) ∧ (K( n ) @ #j)) ∧ (¬(∃ #r. Reveal( 'A' ) @ #r))) ∧
+       (¬(∃ #r. Reveal( 'B' ) @ #r))) ∧
+      (¬(∃ #r. Reveal( 'CKKS' ) @ #r)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ n #i #j.
+  (Finish( n ) @ #i) ∧ (K( n ) @ #j)
+ ∧
+  (∀ #r. (Reveal( 'A' ) @ #r) ⇒ ⊥) ∧
+  (∀ #r. (Reveal( 'B' ) @ #r) ⇒ ⊥) ∧
+  (∀ #r. (Reveal( 'CKKS' ) @ #r) ⇒ ⊥)"
+*/
+by sorry
+
+lemma compute_secrecy_with_A_TemporalKey_Reveal:
+  all-traces
+  "¬(∃ n #i #j.
+      (((Finish( n ) @ #i) ∧ (K( n ) @ #j)) ∧ (¬(∃ #r. Reveal( 'B' ) @ #r))) ∧
+      (¬(∃ #r. Reveal( 'CKKS' ) @ #r)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ n #i #j.
+  (Finish( n ) @ #i) ∧ (K( n ) @ #j)
+ ∧
+  (∀ #r. (Reveal( 'B' ) @ #r) ⇒ ⊥) ∧ (∀ #r. (Reveal( 'CKKS' ) @ #r) ⇒ ⊥)"
+*/
+simplify
+solve( State_B_1( ID, k2, CKKS_key, score ) ▶₀ #i )
+  case B_1
+  solve( In_A( '3', CKKS_enc(n, pk(~ltkA)) ) ▶₁ #i )
+    case ChanIn_A
+    solve( !KU( mul(m, ~weight) ) @ #vk )
+      case c_mul
+      solve( !KU( ~weight ) @ #vk.2 )
+        case Reveal_TemporalKeyA
+        solve( In_A( '1', C1 ) ▶₃ #vr )
+          case ChanIn_A
+          solve( In_A( '2',
+                       <RO(RO(x, ~k1), x.1), RO(x, x.1), CKKS_enc(m, pk(~ltkA))>
+                 ) ▶₂ #vr.6 )
+            case ChanIn_A
+            solve( !KU( ~score ) @ #vk.2 )
+              case ChanOut_A
+              solve( !KU( ~ltkA.1 ) @ #vk.3 )
+                case Reveal_CKKSKey
+                by contradiction /* from formulas */
+              qed
+            next
+              case Reveal_TemporalKeyB
+              by contradiction /* from formulas */
+            qed
+          qed
+        qed
+      qed
+    next
+      case transform
+      solve( !KU( ~ltkA.1 ) @ #vk.1 )
+        case Reveal_CKKSKey
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+qed
+
+lemma compute_secrecy_with_B_TemporalKey_Reveal:
+  all-traces
+  "¬(∃ n #i #j.
+      (((Finish( n ) @ #i) ∧ (K( n ) @ #j)) ∧ (¬(∃ #r. Reveal( 'A' ) @ #r))) ∧
+      (¬(∃ #r. Reveal( 'CKKS' ) @ #r)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ n #i #j.
+  (Finish( n ) @ #i) ∧ (K( n ) @ #j)
+ ∧
+  (∀ #r. (Reveal( 'A' ) @ #r) ⇒ ⊥) ∧ (∀ #r. (Reveal( 'CKKS' ) @ #r) ⇒ ⊥)"
+*/
+by sorry
+
+/* All well-formedness checks were successful. */
+
+end
