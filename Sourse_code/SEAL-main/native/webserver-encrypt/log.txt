@@ -1,0 +1,17 @@
+begin time:1628053703445
+Client: Loading data...
+cnonfig end time:1628053703450
+Client: Starting the protocol.
+Client: Waiting for response and encrypted set from the server...
+client_message send time:1628053703450
+Client: Received encrypted set from the server, double encrypting...
+Client: Sending double encrypted server data and single-encrypted client data to the server.
+Client: Waiting for encrypted intersection sum...
+recieve time:1628053703614
+send erlun + yici time:1628053703615
+Client: Sending double encrypted server data and single-encrypted client data to the server.
+Client: Waiting for encrypted intersection sum...
+Client: Received response from the server. Decrypting the intersection-sum.
+recieve time:1628053703797
+client end:1628053703797
+Client: The intersection size is 1 and the intersection-sum is 0

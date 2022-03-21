@@ -1,4 +1,10 @@
 # File and Folder introduction
 
-## Intersection
-This folder contains the code of PIWS.
+## jj-client-server
+This folder contains the code of private-join-and-compute.
+
+## SEAL-main
+This folder contains the code of SEAL-client.
+
+## SEAL-server
+This folder contains the code of SEAL-server.
